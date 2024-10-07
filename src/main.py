@@ -1,4 +1,4 @@
-import os
+import io
 from dotenv import load_dotenv
 import streamlit as st
 from langchain_community.document_loaders import UnstructuredPDFLoader
@@ -11,14 +11,14 @@ from langchain.memory import ConversationBufferMemory
 
 load_dotenv()
 
-working_dir = os.path.dirname(os.path.abspath(__file__))
-
-def load_document(file_path):
-    loader = UnstructuredPDFLoader(file_path)
+def load_document(file):
+    """Load document directly from an in-memory file."""
+    loader = UnstructuredPDFLoader(io.BytesIO(file.read()))
     documenta = loader.load()
     return documenta
 
 def setup_vectorstore(documents):
+    """Set up FAISS vector store."""
     embeddings = HuggingFaceEmbeddings()
     text_splitter = CharacterTextSplitter(
         is_separator_regex=False,
@@ -31,6 +31,7 @@ def setup_vectorstore(documents):
     return vectorstore
 
 def create_chain(vectorstore):
+    """Create a conversational retrieval chain with memory."""
     llm = ChatGroq(
         model="llama-3.1-70b-versatile",
         temperature=0
@@ -42,7 +43,6 @@ def create_chain(vectorstore):
         memory_key="chat_history",
         return_messages=True
     )
-    # Use the correct method for ConversationalRetrievalChain
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
@@ -60,19 +60,16 @@ st.set_page_config(
 
 st.title("🤖 MEG_AI - A simpler version of open source kotaemon")
 
-# Initialize the chat history in streamlit session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-uploaded_file = st.file_uploader(label="Upload your pdf file", type=["pdf"])
+uploaded_file = st.file_uploader(label="Upload your PDF file", type=["pdf"])
 
 if uploaded_file:
-    file_path = f"{working_dir}/dataset/{uploaded_file.name}"
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-
+    documenta = load_document(uploaded_file)
+    
     if "vectorstore" not in st.session_state:
-        st.session_state.vectorstore = setup_vectorstore(load_document(file_path))
+        st.session_state.vectorstore = setup_vectorstore(documenta)
 
     if "conversation_chain" not in st.session_state:
         st.session_state.conversation_chain = create_chain(st.session_state.vectorstore)
